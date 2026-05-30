@@ -1,136 +1,272 @@
-# OpenShape: Scaling Up 3D Shape Representation Towards Open-World Understanding
- [\[project\]](https://colin97.github.io/OpenShape/) [\[paper\]](https://arxiv.org/pdf/2305.10764.pdf)  [\[Live Demo\]](https://huggingface.co/spaces/OpenShape/openshape-demo) 
+# OpenShape × Unity — Automatic Mesh Classifier
 
-[***News***] OpenShape is accepted by NeurIPS 2023. See you in New Orleans!
+> **What is this?**
+> You have a Unity scene full of meshes. You want to know what each one *is* — chair, tree, rock, barrel — without touching a label by hand. This tool does that automatically using [OpenShape](https://github.com/Colin97/OpenShape_code), a SOTA open-vocabulary 3-D shape understanding model (85.3% top-1 on ModelNet40 zero-shot).
 
-[***News***] We have released our checkpoints, training code, and training data!
+---
 
-[***News***] [Live demo](https://huggingface.co/spaces/OpenShape/openshape-demo) released! Thanks HuggingFace🤗 for sponsoring this demo!!
-
-Official code of "OpenShape: Scaling Up 3D Shape Representation Towards Open-World Understanding".
-
-![avatar](demo/teaser.png)
-Left: Zero-shot 3D shape classification on the Objaverse-LVIS (1,156 categories) and ModelNet40 datasets (40 common categories). Right: Our shape representations encode a broad range of semantic and visual concepts. We input two 3D shapes and use their shape embeddings to retrieve the top three shapes whose embeddings are simultaneously closest to both inputs.
-
-
-## Online Demo
-
-Explore the online [demo](https://huggingface.co/spaces/OpenShape/openshape-demo), which currently supports: (a) 3D shape classification (LVIS categories and user-uploaded texts), (b) 3D shape retrieval (from text, image, and 3D point cloud), (c) point cloud captioning, and (d) point cloud-based image generation.
-
-The demo is built with [streamlit](https://streamlit.io). If you encounter "connection error", please try to clear your browser cache or use the incognito model.
-
-The code for the demo can be found [here](https://huggingface.co/OpenShape/openshape-demo-support) and [here](https://huggingface.co/spaces/OpenShape/openshape-demo/tree/main). The support library ([README](https://huggingface.co/OpenShape/openshape-demo-support)) also serves as an inference library for models with PointBERT backbone.
-
-## Checkpoints
-
-| Model              | Training Data | CLIP version| Backbone | Objaverse-LVIS Zero-Shot Top1 (Top5) | ModelNet40 Zero-Shot Top1 (Top5) | gravity-axis | Notes |
-| :------:  | :------: | :------: |:------: |:------: | :------: |:------: |:------: |
-|[pointbert-vitg14-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitg14-rgb/tree/main)| Four datasets | OpenCLIP ViT-bigG-14 | PointBERT | 46.8 (77.0) | 84.4 (98.0) |z-axis|
-|[pointbert-no-lvis](https://huggingface.co/OpenShape/openshape-pointbert-no-lvis/tree/main)| Four datasets (no LVIS) | OpenCLIP ViT-bigG-14 | PointBERT | 39.1 (68.9) | 85.3 (97.4) |z-axis|
-|[pointbert-shapenet-only](https://huggingface.co/OpenShape/openshape-pointbert-shapenet/tree/main)| ShapeNet only | OpenCLIP ViT-bigG-14 | PointBERT | 10.8 (25.0) | 70.3 (91.3) |z-axis|
-|[spconv-all](https://huggingface.co/OpenShape/openshape-spconv-all/tree/main)| Four datasets | OpenCLIP ViT-bigG-14 | SparseConv | 42.7 (72.8)| 83.7 (98.4)|z-axis|
-|[spconv-all-no-lvis](https://huggingface.co/OpenShape/openshape-all-no-lvis/tree/main)| Four datasets (no LVIS) | OpenCLIP ViT-bigG-14 | SparseConv | 38.1 (68.2)|84.0 (97.3)|z-axis|
-|[spconv-shapenet-only](https://huggingface.co/OpenShape/openshape-spconv-shapenet-only/tree/main)| ShapeNet only | OpenCLIP ViT-bigG-14 | SparseConv | 12.1 (27.1) |74.1 (89.5)|z-axis|
-|[pointbert-vitl14-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitl14-rgb/tree/main)| Objaverse (No LVIS) | CLIP ViT-L/14 | PointBERT |N/A | N/A|y-axis|used for image generation demo
-|[pointbert-vitb32-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitb32-rgb/tree/main)| Objaverse | CLIP ViT-B/32 | PointBERT |N/A | N/A|y-axis|used for pc captioning demo
-
-## Installation
-
-If you would to run the inference or (and) training locally, you may need to install the dependendices.
-
-1. Create a conda environment and install [pytorch](https://pytorch.org/get-started/previous-versions/), [MinkowskiEngine](https://nvidia.github.io/MinkowskiEngine/quick_start.html), and [DGL](https://www.dgl.ai/pages/start.html) by the following commands or their official guides:
-```
-conda create -n OpenShape python=3.9
-conda activate OpenShape
-conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
-pip install -U git+https://github.com/NVIDIA/MinkowskiEngine
-conda install -c dglteam/label/cu113 dgl
-```
-2. Install the following packages:
-```
-pip install huggingface_hub wandb omegaconf torch_redstone einops tqdm open3d 
-```
-
-## Inference
-
-Try the following example code for computing OpenShape embeddings of 3D point clouds and computing 3D-text and 3D-image similarities.
-```
-python3 src/example.py
-```
-Please normalize the input point cloud and ensure the gravity axis of the point cloud is aligned with the pre-trained models.
-
-## Training
-
-1. The processed training and evaluation data can be found [here](https://huggingface.co/datasets/OpenShape/openshape-training-data). Download and uncompress the data by the following command:
-```
-python3 download_data.py
-```
-The total data size is ~205G and files will be downloaded and uncompressed in parallel. If you don't need training and evaluation on the Objaverse dataset, you can skip that part (~185G). 
-
-2. Run the training by the following command:
-```
-wandb login {YOUR_WANDB_ID}
-python3 src/main.py dataset.train_batch_size=20 --trial_name bs_20
-```
-The default config can be found in `src/configs/train.yml`, which is trained on a single A100 GPU. You can also change the setting by passing the arguments. Here are some examples for main experiments used in the paper:
+## How it works
 
 ```
-python3 src/main.py --trial_name spconv_all
-python3 src/main.py --trial_name spconv_no_lvis dataset.train_split=meta_data/split/train_no_lvis.json 
-python3 src/main.py --trial_name spconv_shapenet_only dataset.train_split=meta_data/split/ablation/train_shapenet_only.json 
-python3 src/main.py --trial_name pointbert_all model.name=PointBERT model.scaling=4 model.use_dense=True training.lr=0.0005 training.lr_decay_rate=0.967 
-python3 src/main.py --trial_name pointbert_no_lvis model.name=PointBERT model.scaling=4 model.use_dense=True training.lr=0.0005 training.lr_decay_rate=0.967 dataset.train_split=meta_data/split/train_no_lvis.json 
-python3 src/main.py --trial_name pointbert_shapenet_only model.name=PointBERT model.scaling=4 model.use_dense=True training.lr=0.0005 training.lr_decay_rate=0.967 dataset.train_split=meta_data/split/ablation/train_shapenet_only.json 
+┌─────────────────────────────────┐        TCP :11000        ┌──────────────────────────────┐
+│         Unity Editor            │  ───── vertices[] ──────► │   Python sidecar server      │
+│                                 │                           │   (unity_server.py)          │
+│  Tools > OpenShape >            │ ◄──── top-K labels ─────  │                              │
+│    Mesh Classifier              │       + confidence        │   OpenShape  (MinkResNet34)  │
+│                                 │                           │   OpenCLIP   (ViT-bigG-14)   │
+│  [MeshClassification]           │                           │                              │
+│   component stamped on each GO  │                           └──────────────────────────────┘
+└─────────────────────────────────┘
 ```
-You can track the training and evaluation (Objaverse-LVIS and ModelNet40) curves on your wandb page.
 
-## Data 
-All data can be found [here](https://huggingface.co/datasets/OpenShape/openshape-training-data). Use `python3 download_data.py` for downloading them.
+- Unity samples vertex data from each `MeshRenderer` in the scene and sends it over a local TCP socket.
+- The Python server converts vertices to a point cloud, runs OpenShape inference, then ranks your label vocabulary by cosine similarity.
+- Results are written back to a `MeshClassification` MonoBehaviour on each GameObject — fully serialized, Undo-safe, and readable at runtime.
 
-### Training Data
-Training data consists of `Objaverse/000-xxx.tar.gz`, `ShapeNet.tar.gz`, `3D-FUTURE.tar.gz`, and `ABO.tar.gz`. After uncompression, you will get a numpy file for each shape, which includes:
-- `dataset`: str, dataset of the shape.
-- `group`: str, group of the shape.
-- `id`: str, id of the shape.
-- `xyz`: numpy array (10000 x 3, [-1,1]), point cloud of the shape.
-- `rgb`: numpy array (10000 x 3, [0, 1]), color of the point cloud.
-- `image_feat`: numpy array, image features of 12 rendered images. 
-- `thumbnail_feat`: numpy array, image feature for the thumbnail image. 
-- `text`: list of string, original texts of the shape, constructed using the metadata of the dataset.
-- `text_feat`: list of dict, text features of the `text`. "original" indicates the text features without the prompt engineering. "prompt_avg" indicates the averaged text features with the [template-based prompt enegineering](https://github.com/salesforce/ULIP/blob/main/data/templates.json). 
-- `blip_caption`: str, BLIP caption generated for the thumbnail or rendered images. 
-- `blip_caption_feat`: dict, text feature of the `blip_caption`.
-- `msft_caption`: str, Microsoft Azure caption generated for the thumbnail or rendered images.
-- `msft_caption_feat`: dict, text feature of the `msft_caption`.
-- `retrieval_text`: list of str, retrieved texts for the thumbnail or rendered images.
-- `retrieval_text_feat`: list of dict, text features of the `retrieval_text`. 
+No UDP fragmentation, no file-path hacks, no Unity Sentis, no asset store purchase.
 
-All image and text features are extracted using OpenCLIP (ViT-bigG-14, laion2b_s39b_b160k).
+---
 
-### Meta Data
-`meta_data.zip` includes the meta data used for training and evaluation (on Objaverse-LVIS, ModelNet40, and ScanObjectNN):
-- `split/`: list of training shapes. `train_all.json` indicates training with four datasets (Objaverse, ShapeNet, ABO, and 3D-FUTURE). `train_no_lvis.json` indicates training with four datasets but Objaverse-LVIS shapes excluded. `ablation/train_shapenet_only.json` indeicates training with ShapeNet shapes only.
-- `gpt4_filtering.json`: filtering results of Objaverse raw texts, generated with GPT4.
-- `point_feat_knn.npy`: KNN indices calculated using shape features, used for hard mining during training.
-- `modelnet40/test_split.json`: list of ModelNet40 test shapes.
-- `modelnet40/test_pc.npy`: point clouds of ModelNet40 test shapes, 10000 x 3.
-- `modelnet40/cat_name_pt_feat.npy`: text features of ModelNet40 category names, prompt engineering used.
-- `lvis_cat_name_pt_feat.npy`: text features of Objeverse-LVIS category names, prompt engineering used.
-- `scanobjectnn/xyz_label.npy`: point clouds and labels of ScanObjectNN test shapes.
-- `scanobjectnn/cat_name_pt_feat.npy`:text features of ScanObjectNN category names, prompt engineering used.
-All text features are extracted using OpenCLIP (ViT-bigG-14, laion2b_s39b_b160k).
+## Quick start
 
-## Citation
+### Step 1 — Python environment
 
-If you find our code helpful, please cite our paper:
+You need the [OpenShape dependencies](https://github.com/Colin97/OpenShape_code) (MinkowskiEngine, DGL, open3d, open_clip) plus the standard Python stdlib for networking. Once your conda env is set up:
+
+```bash
+# from this repo root
+conda activate openshape
+
+python src/unity_server.py          # GPU (recommended)
+python src/unity_server.py --cpu    # CPU-only, slower but works
+```
+
+The first run downloads the checkpoint from HuggingFace (~800 MB). Subsequent starts are instant.
 
 ```
-@misc{liu2023openshape,
-      title={OpenShape: Scaling Up 3D Shape Representation Towards Open-World Understanding}, 
-      author={Minghua Liu and Ruoxi Shi and Kaiming Kuang and Yinhao Zhu and Xuanlin Li and Shizhong Han and Hong Cai and Fatih Porikli and Hao Su},
-      year={2023},
-      eprint={2305.10764},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
-}
+$ python src/unity_server.py
+2024-06-01 12:00:00 [INFO] Device: cuda
+2024-06-01 12:00:01 [INFO] Downloading / loading checkpoint ...
+2024-06-01 12:00:12 [INFO] OpenShape model ready.
+2024-06-01 12:00:22 [INFO] OpenCLIP ready.
+2024-06-01 12:00:22 [INFO] Listening on 127.0.0.1:11000   <-- ready
 ```
+
+Server flags:
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--port` | `11000` | TCP port |
+| `--top_k` | `5` | Labels returned per object |
+| `--cpu` | off | Force CPU inference |
+| `--mock` | off | Stub model (for testing, no download) |
+| `--model` | `OpenShape/openshape-spconv-all` | HuggingFace repo |
+
+---
+
+### Step 2 — Copy the Unity scripts
+
+Drop these two files into your Unity project:
+
+```
+Unity/Scripts/MeshClassification.cs  →  Assets/Scripts/MeshClassification.cs
+Unity/Editor/OpenShapeScanner.cs     →  Assets/Editor/OpenShapeScanner.cs
+```
+
+That's it — no packages, no `.unitypackage`, no Assembly Definitions needed.
+
+---
+
+### Step 3 — Run a scan
+
+Open the scanner window:
+
+```
+Tools  >  OpenShape  >  Mesh Classifier
+```
+
+```
+┌──────────────────────────────────────────────┐
+│  OpenShape Mesh Classifier                   │
+├──────────────────────────────────────────────┤
+│  Python host   [ 127.0.0.1              ]    │
+│  Port          [ 11000                  ]    │
+│  Top-K labels  [──●────────────] 5           │
+│  Vertices      [────●───────────] 4096       │
+│                                              │
+│  ▶ Label vocabulary (one per line)           │
+│  ┌────────────────────────────────────────┐  │
+│  │ chair                                  │  │
+│  │ table                                  │  │
+│  │ tree                                   │  │
+│  │ rock                                   │  │
+│  │ barrel                                 │  │
+│  │ ...                                    │  │
+│  └────────────────────────────────────────┘  │
+│                                              │
+│  Idle                                        │
+│  ┌──────────────────────────────────────┐    │
+│  │           Start Scan                 │    │
+│  └──────────────────────────────────────┘    │
+└──────────────────────────────────────────────┘
+```
+
+While scanning:
+
+```
+┌──────────────────────────────────────────────┐
+│  Classifying: Tree_03   (14 / 87)            │
+│  ████████████░░░░░░░░░░░░░░░░░░  14 / 87     │
+│                                              │
+│  ┌──────────────────────────────────────┐    │
+│  │  Cancel (apply partial results)      │    │
+│  └──────────────────────────────────────┘    │
+└──────────────────────────────────────────────┘
+```
+
+Cancel at any time — every result received so far is already applied. Nothing is lost.
+
+---
+
+### Step 4 — What you get
+
+After the scan, every classified GameObject has a `MeshClassification` component visible in the Inspector:
+
+```
+▼ Mesh Classification (Script)
+  ─ Primary Classification ──────────────────────
+    Primary Label         tree
+    Primary Confidence    0.84
+  ─ All Top Results ─────────────────────────────
+    ▼ Top Results         5 items
+      [0]  label: tree        confidence: 0.84
+      [1]  label: plant       confidence: 0.71
+      [2]  label: stump       confidence: 0.62
+      [3]  label: log         confidence: 0.58
+      [4]  label: bush        confidence: 0.51
+  ─ Meta ────────────────────────────────────────
+    Last Classified Utc   2024-06-01T12:05:43Z
+  ─ User overrides / extra tags ─────────────────
+    ▼ Custom Tags         0 items               ← add your own, never overwritten
+```
+
+---
+
+## Runtime API
+
+```csharp
+// Find every object the AI called a "tree"
+List<GameObject> trees = MeshClassification.FindAllWithLabel("tree");
+
+// Check one object (also searches customTags)
+if (GetComponent<MeshClassification>().HasLabel("hazard"))
+    EnableDamageZone();
+
+// Read the ranked results directly
+var mc = GetComponent<MeshClassification>();
+Debug.Log($"{mc.primaryLabel}  ({mc.primaryConfidence:P0})");
+
+foreach (var r in mc.topResults)
+    Debug.Log($"  {r.label}: {r.confidence:F2}");
+```
+
+`HasLabel()` is case-insensitive and checks both `topResults` and your `customTags`, so mixing AI labels with hand-written ones works seamlessly.
+
+---
+
+## Label vocabulary
+
+The vocabulary is open — write any words you want, one per line, in the scanner window. The model doesn't need retraining; it scores each label via CLIP similarity at inference time.
+
+**Tips for low-poly VR art:**
+- Use game-genre nouns: `chest`, `torch`, `barrel`, `shrine`, `crystal`, `gate`
+- Be specific where it matters: `stone_wall` vs `wooden_wall` vs `fence`
+- Add material cues: `mossy rock`, `metal door` (OpenCLIP handles multi-word labels)
+- The server ships an 80-label default vocabulary covering common game objects — it activates whenever Unity doesn't send a `labels` array
+
+---
+
+## Testing
+
+The test suite runs in **mock mode** — no GPU, no HuggingFace download, just `torch` (CPU) + `numpy` + `pytest`. It covers the full round-trip: wire protocol, point-cloud sampling, server request/response, concurrent clients, and edge cases.
+
+```bash
+pip install torch numpy pytest
+pytest tests/ -v
+```
+
+GitHub Actions runs these tests automatically on every push and pull request (Python 3.10 and 3.11).
+
+### Test shapes
+
+Seven procedural meshes are generated in code (no asset files needed):
+
+| Shape | Description | Why |
+|-------|-------------|-----|
+| `cube` | 8-vertex unit cube | minimal vertex count, degenerate sampling |
+| `sphere` | 440-pt UV sphere | smooth, uniform coverage |
+| `cylinder` | 50-pt open cylinder | partial symmetry |
+| `cone` | 48-pt cone | apex singularity |
+| `torus` | 288-pt donut | concave topology |
+| `flat_plane` | 100-pt plane | near-planar / degenerate Z extent |
+| `pyramid` | 5-vertex pyramid | extreme undersample (fewer than NUM_POINTS) |
+
+---
+
+## File layout
+
+```
+src/
+  unity_server.py              ← Python TCP server (run this first)
+  configs/train.yaml           ← OpenShape model config
+
+Unity/
+  Scripts/
+    MeshClassification.cs      ← MonoBehaviour: data holder + runtime API
+  Editor/
+    OpenShapeScanner.cs        ← EditorWindow: scan UI + TCP client
+
+tests/
+  meshes.py                    ← procedural test mesh generators
+  test_protocol.py             ← unit tests: wire protocol + point-cloud helpers
+  test_server_mock.py          ← integration tests: full server round-trip (mock)
+
+.github/
+  workflows/
+    test.yml                   ← CI: runs on every push / PR
+```
+
+---
+
+## Dependencies
+
+**Python** (in your OpenShape conda env):
+
+```
+torch              # deep learning
+open_clip          # CLIP text encoder
+MinkowskiEngine    # sparse 3D convolutions (OpenShape backbone)
+open3d             # point-cloud I/O helpers
+huggingface_hub    # checkpoint download
+numpy              # everything else
+```
+
+All networking uses only the Python standard library (`socket`, `struct`, `json`, `threading`).
+
+**Unity** — nothing beyond the built-in editor API. No packages, no UPM, no DLLs.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `Connection refused` | Python server isn't running yet, or wrong port |
+| `Server ping failed` | Server still loading the model — wait for `Listening on ...` log line |
+| Slow inference | Add `--cpu` if no CUDA GPU, or reduce `Vertices to sample` in the window |
+| No MeshRenderers found | Make sure at least one object in the scene has a `MeshRenderer` + `MeshFilter` |
+| Labels seem random | The mock server (`--mock`) produces deterministic-but-arbitrary results; use the real model for actual inference |
+
+---
+
+*Based on [OpenShape](https://arxiv.org/pdf/2305.10764.pdf) (NeurIPS 2023) by Colin Zhang et al.*

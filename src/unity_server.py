@@ -71,6 +71,43 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes | None:
         buf.extend(chunk)
     return bytes(buf)
 
+# ── mock models (for CI / testing without GPU or HuggingFace checkpoints) ────
+
+CLIP_DIM = 1280  # ViT-bigG-14 output dimension
+
+class _MockShapeModel(torch.nn.Module):
+    """Deterministic random-projection stand-in for OpenShape."""
+    def __init__(self, dim=CLIP_DIM):
+        super().__init__()
+        self.proj = torch.nn.Linear(6, dim, bias=False)
+    def forward(self, coords_or_xyz, feat, **kwargs):
+        # feat shape: (N, 6)  or  (B, N, 6)
+        f = feat.float()
+        if f.dim() == 3:
+            f = f.mean(dim=1)          # (B, 6)
+        else:
+            f = f.mean(dim=0, keepdim=True)  # (1, 6)
+        return self.proj(f)            # (B, dim)
+
+class _MockClipModel:
+    """Stand-in for OpenCLIP – returns seeded random text embeddings."""
+    def __init__(self, dim=CLIP_DIM):
+        self._dim = dim
+    def encode_text(self, tokens):
+        # reproducible per token hash so label rankings are stable in tests
+        out = []
+        for row in tokens.cpu().numpy():
+            seed = int(row.sum()) % (2**31)
+            rng = np.random.RandomState(seed)
+            out.append(rng.randn(self._dim).astype(np.float32))
+        return torch.from_numpy(np.stack(out))
+
+def load_mock_models(device: str):
+    log.info("Mock mode: loading stub shape + CLIP models (no checkpoints needed).")
+    shape_model = _MockShapeModel().to(device).eval()
+    clip_model  = _MockClipModel()
+    return shape_model, clip_model
+
 # ── model loading ─────────────────────────────────────────────────────────────
 
 def load_openshape(config, model_name: str, device: str):
@@ -149,12 +186,12 @@ def vertices_to_pointcloud(vertices: list[list[float]], normals: list[list[float
 
 
 @torch.no_grad()
-def classify(xyz_t, feat_t, model, clip_model, labels: list[str], device: str, voxel_size: float):
+def classify(xyz_t, feat_t, model, clip_model, labels, device: str, voxel_size: float):
     if device == "cuda":
         xyz_t = xyz_t.cuda()
         feat_t = feat_t.cuda()
 
-    if HAS_MINKOWSKI and hasattr(model, "forward") and "Mink" in type(model).__name__:
+    if HAS_MINKOWSKI and "Mink" in type(model).__name__:
         coords = ME.utils.batched_coordinates([xyz_t], dtype=torch.float32)
         if device == "cuda":
             coords = coords.cuda()
@@ -162,9 +199,15 @@ def classify(xyz_t, feat_t, model, clip_model, labels: list[str], device: str, v
     else:
         shape_feat = model(xyz_t.unsqueeze(0), feat_t.unsqueeze(0))
 
-    tokenizer = open_clip.get_tokenizer("ViT-bigG-14")
-    tokens = tokenizer(labels).to(device)
-    text_feat = clip_model.encode_text(tokens)
+    # clip_model may be real OpenCLIP or _MockClipModel
+    if isinstance(clip_model, _MockClipModel):
+        # mock path: no tokeniser needed
+        dummy_tokens = torch.zeros(len(labels), 77, dtype=torch.long)
+        text_feat = clip_model.encode_text(dummy_tokens)
+    else:
+        tokenizer = open_clip.get_tokenizer("ViT-bigG-14")
+        tokens = tokenizer(labels).to(device)
+        text_feat = clip_model.encode_text(tokens)
 
     sim = (F.normalize(shape_feat, dim=-1) @ F.normalize(text_feat, dim=-1).T).squeeze(0)
     return sim.cpu().float().numpy()
@@ -246,15 +289,18 @@ class OpenShapeServer:
         self.device     = "cuda" if (not args.cpu and torch.cuda.is_available()) else "cpu"
         self.model_name = args.model
 
-        log.info(f"Device: {self.device}")
+        self.mock = args.mock
+        log.info(f"Device: {self.device}  |  mock={self.mock}")
 
-        # load config via OpenShape's own helper
-        cli, extras = openshape_parse_args([])
-        config = load_config(args.config, cli_args=vars(cli), extra_args=extras)
-        self.voxel_size = config.model.voxel_size
-
-        self.model      = load_openshape(config, self.model_name, self.device)
-        self.clip_model = load_open_clip(self.device)
+        if self.mock:
+            self.voxel_size = 0.02
+            self.model, self.clip_model = load_mock_models(self.device)
+        else:
+            cli, extras = openshape_parse_args([])
+            config = load_config(args.config, cli_args=vars(cli), extra_args=extras)
+            self.voxel_size = config.model.voxel_size
+            self.model      = load_openshape(config, self.model_name, self.device)
+            self.clip_model = load_open_clip(self.device)
 
         # broad default label set – Unity can override per-request
         self.default_labels = [
@@ -292,6 +338,8 @@ def main():
     ap.add_argument("--cpu",    action="store_true")
     ap.add_argument("--model",  default="OpenShape/openshape-spconv-all",
                     help="HuggingFace model repo id")
+    ap.add_argument("--mock",   action="store_true",
+                    help="Use stub models (no checkpoint download, for testing)")
     args = ap.parse_args()
     OpenShapeServer(args).serve()
 
