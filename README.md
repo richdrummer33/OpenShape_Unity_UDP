@@ -192,7 +192,7 @@ The test suite runs in **mock mode** — no GPU, no HuggingFace download, just `
 
 ```bash
 pip install torch numpy pytest
-pytest tests/ -v
+pytest tests/ -v -p no:dash
 ```
 
 GitHub Actions runs these tests automatically on every push and pull request (Python 3.10 and 3.11).
